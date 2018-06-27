@@ -1,15 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
 
 #include "pcg32.h"
-#include "simdpcg32.h"
+#include "simdpcg32.hpp"
+
+#if  __cplusplus
+#define register /* remove this keyword, as it's deprecated in c++17.*/
+extern "C" {
+#endif
 
 static uint32_t counter;
 void populateRandom_pcg32(uint32_t *answer, uint32_t size) {
-  pcg32_random_t key = {
-      .state = 324,
-      .inc = 4444}; // I am a crazy man using bleeding-edge C99 in 2018
+  pcg32_random_t key = {324, 4444}; // I am a crazy man using bleeding-edge C99 in 2018
   for (uint32_t i = 0; i < size; i++) {
     answer[i] = pcg32_random_r(&key);
   }
@@ -21,9 +25,9 @@ void populateRandom_pcg32(uint32_t *answer, uint32_t size) {
 void populateRandom_avx512_pcg32(uint32_t *answer, uint32_t size) {
   uint32_t i = 0;
   avx512_pcg32_random_t key = {
-      .state = _mm512_set1_epi64(1111),
-      .inc = _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
-      .multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d)};
+      _mm512_set1_epi64(1111),
+      _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
+      _mm512_set1_epi64(0x5851f42d4c957f2d)};
   if (size >= 8) {
     for (; i < size - 8; i += 8) {
       __m256i r = avx512_pcg32_random_r(&key);
@@ -42,13 +46,13 @@ void populateRandom_avx512_pcg32(uint32_t *answer, uint32_t size) {
 void populateRandom_avx512_pcg32_two(uint32_t *answer, uint32_t size) {
   uint32_t i = 0;
   avx512_pcg32_random_t key1 = {
-      .state = _mm512_set1_epi64(1111),
-      .inc = _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
-      .multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d)};
+      _mm512_set1_epi64(1111),
+      _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
+      _mm512_set1_epi64(0x5851f42d4c957f2d)};
   avx512_pcg32_random_t key2 = {
-      .state = _mm512_set1_epi64(1111222),
-      .inc = _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
-      .multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d)};
+      _mm512_set1_epi64(1111222),
+      _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
+      _mm512_set1_epi64(0x5851f42d4c957f2d)};
   if (size >= 16) {
     for (; i < size - 16; i += 16) {
       __m256i r1 = avx512_pcg32_random_r(&key1);
@@ -71,27 +75,24 @@ void populateRandom_avx512_pcg32_two(uint32_t *answer, uint32_t size) {
   counter += answer[size - 1];
 }
 
-#define INC _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1)
-#define MULTIPLIER _mm512_set1_epi64(0x5851f42d4c957f2d)
-
 void populateRandom_avx512_pcg32_four(uint32_t *answer, uint32_t size) {
   uint32_t i = 0;
   avx512_pcg32_random_t key1 = {
-      .state = _mm512_set1_epi64(1111),
-      .inc = INC,
-      .multiplier = MULTIPLIER};
+      _mm512_set1_epi64(1111),
+      _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
+      _mm512_set1_epi64(0x5851f42d4c957f2d)};
   avx512_pcg32_random_t key2 = {
-      .state = _mm512_set1_epi64(1111222),
-      .inc = INC,
-      .multiplier = MULTIPLIER};
+      _mm512_set1_epi64(1111222),
+      _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
+      _mm512_set1_epi64(0x5851f42d4c957f2d)};
   avx512_pcg32_random_t key3 = {
-      .state = _mm512_set1_epi64(111133333),
-      .inc = INC,
-      .multiplier = MULTIPLIER};
+      _mm512_set1_epi64(111133333),
+      _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
+      _mm512_set1_epi64(0x5851f42d4c957f2d)};
   avx512_pcg32_random_t key4 = {
-      .state = _mm512_set1_epi64(1111444444),
-      .inc = INC,
-      .multiplier = MULTIPLIER};
+      _mm512_set1_epi64(1111444444),
+      _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1),
+      _mm512_set1_epi64(0x5851f42d4c957f2d)};
   if (size >= 32) {
     for (; i < size - 32; i += 32) {
       __m256i r1 = avx512_pcg32_random_r(&key1);
@@ -119,17 +120,14 @@ void populateRandom_avx512_pcg32_four(uint32_t *answer, uint32_t size) {
   }
   if (i < size) {
     __m256i r = avx512_pcg32_random_r(&key1);
-    uint32_t buffer[8] __attribute__ ((aligned(sizeof(__m256i))));
-    _mm256_store_si256((__m256i *)buffer, r);
+    uint32_t buffer[8];
+    _mm256_storeu_si256((__m256i *)buffer, r);
     memcpy(answer + i, buffer, sizeof(uint32_t) * (size - i));
   }
   counter += answer[size - 1];
 }
 
-#undef INC
-#undef MULTIPLIER
-
-#endif
+#endif // #ifdef AVX512PCG
 
 #define RDTSC_START(cycles)                                                    \
   do {                                                                         \
@@ -191,7 +189,7 @@ void demo(int size) {
   printf("We store values to an array of size = %lu kB.\n",
          size * sizeof(uint32_t) / (1024));
   int repeat = 500;
-  uint32_t *prec = malloc(size * sizeof(uint32_t));
+  uint32_t *prec = (uint32_t *)malloc(size * sizeof(uint32_t));
   printf("\nWe just generate the random numbers: \n");
   BEST_TIME(populateRandom_pcg32(prec, size), , repeat, size);
 #ifdef AVX512PCG
@@ -204,8 +202,13 @@ void demo(int size) {
   free(prec);
   printf(" %d \n", (int)counter);
 }
+#if __cplusplus
+}
+#endif
 
 int main() {
-  demo(50000);
+  //demo(50000);
+  std::vector<int> v{1,2,3,4};
+  pcg::PCGenerator<uint64_t, 4> pcgen(v);
   return 0;
 }

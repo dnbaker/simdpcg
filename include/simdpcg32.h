@@ -1,6 +1,10 @@
 #ifndef SIMDXORSHIFT128PLUS_H
 #define SIMDXORSHIFT128PLUS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h> // life is short, please use a C99-compliant compiler
 
 #if defined(_MSC_VER)
@@ -34,7 +38,7 @@ typedef struct avx512_pcg_state_setseq_64 { // Internals are *Private*.
   __m512i multiplier; // set to _mm512_set1_epi64(0x5851f42d4c957f2d);
 } avx512_pcg32_random_t;
 static inline __m256i avx512_pcg32_random_r(avx512_pcg32_random_t *rng) {
-  __m512i oldstate = rng->state;
+  const __m512i oldstate = rng->state;
   rng->state = _mm512_add_epi64(_mm512_mullo_epi64(rng->multiplier, rng->state),
                                 rng->inc);
   __m512i xorshifted = _mm512_srli_epi64(
@@ -43,6 +47,12 @@ static inline __m256i avx512_pcg32_random_r(avx512_pcg32_random_t *rng) {
   return _mm512_cvtepi64_epi32(_mm512_rorv_epi32(xorshifted,rot));
 }
 
+#else
+//#error("simdpcg is only available under AVX512, required AVX512F and AVX512DQ")
+#endif
+
+#ifdef __cplusplus
+} /* extern "C" */
 #endif
 
 #endif
