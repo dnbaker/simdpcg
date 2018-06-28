@@ -74,14 +74,48 @@ namespace types {
 
 namespace pcg {
 using namespace std::literals;
-static const __m512i INC = _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1);
-static const __m512i MULTIPLIER = _mm512_set1_epi64(0x5851f42d4c957f2d);
 
-using AVXType = avx512_pcg32_random_t;
+// Constants
+template<typename T>
+static const int MULTIPLIER = 137;
+template<typename T>
+__attribute__((aligned(64))) static const __m512i INC = _mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1);
+template<>
+__attribute__((aligned(32))) const __m256i INC<__m256i> = _mm256_set_epi64x(7, 5, 3, 1);
+template<>
+__attribute__((aligned(32))) const __m256i MULTIPLIER<__m256i> = _mm256_set1_epi64x(0x5851f42d4c957f2d);
+template<>
+__attribute__((aligned(64))) const __m512i MULTIPLIER<__m512i> = _mm512_set1_epi64(0x5851f42d4c957f2d);
+
+// Typedefs for generators.
+
+using AVX512 = avx512_pcg32_random_t;
+using AVX2   = avx256_pcg32_random_t;
+
+// Type-ge
+
+auto generate(AVX512 *c) {return avx512_pcg32_random_r(c);}
+auto generate(AVX2 *c)   {return avx256_pcg32_random_r(c);}
+
+template<typename T> auto set1(uint64_t x) {return T(x);}
+template<> auto set1<__m512i>(uint64_t x) {return _mm512_set1_epi64(x);}
+template<> auto set1<__m256i>(uint64_t x) {return _mm256_set1_epi64x(x);}
+
 namespace detail {
+template<typename T>
+struct ReturnType {
+    using Type = std::nullptr_t;
+};
+template<> struct ReturnType<AVX512> {using Type = __m256i;};
+template<> struct ReturnType<AVX2> {using Type = __m128i;};
+
 template<size_t index>
 struct pcg_unroller_t {
-    static void apply(__m256i *g, AVXType *c) {
+    static void apply(__m128i *g, AVX2 *c) {
+        *g++ = generate(c++); // g++, I command you to generate C++!
+        pcg_unroller_t<index - 1>::operator()(g, c);
+    }
+    static void apply(__m256i *g, AVX512 *c) {
         *g++ = avx512_pcg32_random_r(c++);
         pcg_unroller_t<index - 1>::operator()(g, c);
     }
@@ -96,17 +130,20 @@ const std::vector<uint64_t> make_seeds(uint64_t seed, size_t n) {
 
 } // namespace detail
 
-template<typename GeneratedType, size_t UNROLL_COUNT=4,
-        typename=std::enable_if_t<types::is_simd_int_v<GeneratedType> || types::is_integral_v<GeneratedType>>>
+template<typename GeneratedType, size_t UNROLL_COUNT=4, typename SIMDType=AVX512,
+         typename=std::enable_if_t<types::is_simd_int_v<GeneratedType> || types::is_integral_v<GeneratedType>>>
 class PCGenerator {
-    AVXType core_[UNROLL_COUNT]; // Core data
-    __m256i  gen_[UNROLL_COUNT]; // Usable data
+    using SIMDGeneratedType = typename detail::ReturnType<SIMDType>;
+
+    SIMDType           core_[UNROLL_COUNT]; // Core data
+    SIMDGeneratedType  gen_[UNROLL_COUNT]; // Usable data
     uint32_t offset_;
+
+    using VectorType        = std::decay_t<decltype(core_[0].state)>;
 public:
     static constexpr size_t NBYTES_TOTAL = sizeof(gen_);
     static constexpr size_t LAST_OFFSET = sizeof(gen_) - sizeof(GeneratedType);
     void generate_values() {
-        throw std::runtime_error("NotImplemented.");
         detail::pcg_unroller_t<UNROLL_COUNT>::apply(gen_, core_);
         offset_ = 0;
     }
@@ -115,7 +152,7 @@ public:
         if(auto dist = std::distance(i1, i2); __builtin_expect(dist != UNROLL_COUNT, 0))
             throw dist < 0 ? std::runtime_error("Cannot create a PCGenerator instance with iterators in backwards order.")
                            : std::runtime_error("Cannot create a PCGenerator with the wrong distance. Expected: "s + std::to_string(UNROLL_COUNT) + ". Found: " + std::to_string(dist));
-        for(auto ci(std::begin(core_)); i1 < i2; *ci++ = AVXType{_mm512_set1_epi64(*i1++), INC, MULTIPLIER});
+        for(auto ci(std::begin(core_)); i1 < i2;*ci++ = SIMDType{set1<VectorType>(*i1++), INC<VectorType>, MULTIPLIER<VectorType>});
     }
     template<typename T, typename=std::enable_if_t<!types::is_integral_v<T> && !types::is_simd_v<T>>>
     PCGenerator(const T &container): PCGenerator(std::begin(container), std::end(container)) {
