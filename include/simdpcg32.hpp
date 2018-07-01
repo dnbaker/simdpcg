@@ -113,12 +113,28 @@ template<size_t index>
 struct pcg_unroller_t {
     static void apply(__m128i *g, AVX2 *c) {
         *g++ = generate(c++); // g++, I command you to generate C++!
-        pcg_unroller_t<index - 1>::operator()(g, c);
+        pcg_unroller_t<index - 1>::apply(g, c);
     }
     static void apply(__m256i *g, AVX512 *c) {
-        *g++ = avx512_pcg32_random_r(c++);
-        pcg_unroller_t<index - 1>::operator()(g, c);
+        *g++ = generate(c++);
+        pcg_unroller_t<index - 1>::apply(g, c);
     }
+    static void apply_unaligned(__m128i *g, AVX2 *c) {
+        _mm_storeu_si128(g++, generate(c++));
+        pcg_unroller_t<index - 1>::apply_unaligned(g, c);
+    }
+    static void apply_unaligned(__m256i *g, AVX512 *c) {
+        _mm256_storeu_si256(g++, generate(c++));
+        pcg_unroller_t<index - 1>::apply_unaligned(g, c);
+    }
+};
+
+template<>
+struct pcg_unroller_t<0> {
+    template<typename... Args>
+    static void apply(Args &&... args) {}
+    template<typename... Args>
+    static void apply_unaligned(Args &&... args) {}
 };
 
 const std::vector<uint64_t> make_seeds(uint64_t seed, size_t n) {
@@ -133,7 +149,7 @@ const std::vector<uint64_t> make_seeds(uint64_t seed, size_t n) {
 template<typename GeneratedType, size_t UNROLL_COUNT=4, typename SIMDType=AVX512,
          typename=std::enable_if_t<types::is_simd_int_v<GeneratedType> || types::is_integral_v<GeneratedType>>>
 class PCGenerator {
-    using SIMDGeneratedType = typename detail::ReturnType<SIMDType>;
+    using SIMDGeneratedType = typename detail::ReturnType<SIMDType>::Type;
 
     SIMDType           core_[UNROLL_COUNT]; // Core data
     SIMDGeneratedType  gen_[UNROLL_COUNT]; // Usable data
@@ -144,8 +160,16 @@ public:
     static constexpr size_t NBYTES_TOTAL = sizeof(gen_);
     static constexpr size_t LAST_OFFSET = sizeof(gen_) - sizeof(GeneratedType);
     void generate_values() {
-        detail::pcg_unroller_t<UNROLL_COUNT>::apply(gen_, core_);
+        detail::pcg_unroller_t<UNROLL_COUNT>::apply(static_cast<SIMDGeneratedType *>(gen_), core_);
         offset_ = 0;
+    }
+    template<typename T, typename=std::enable_if_t<types::is_integral_v<T> || types::is_simd_int_v<T>>>
+    void buffill(T *dest) {
+        // Writes results to destination buffer directly rather than to the cache here.
+        if((reinterpret_cast<uint64_t>(dest) & ((sizeof(SIMDGeneratedType) << 3) - 1)) == 0)
+            detail::pcg_unroller_t<UNROLL_COUNT>::apply(reinterpret_cast<SIMDGeneratedType *>(dest), core_);
+        else
+            detail::pcg_unroller_t<UNROLL_COUNT>::apply_unaligned(reinterpret_cast<SIMDGeneratedType *>(dest), core_);
     }
     template<typename it1, typename it2> // Two types because sometimes end iterators are a different type.
     PCGenerator(it1 i1, it2 i2): offset_(NBYTES_TOTAL) {
@@ -167,6 +191,7 @@ public:
         return ret;
     }
     const uint8_t *buf() const {return reinterpret_cast<const uint8_t *>(gen_);}
+    size_t bufsize() const {return sizeof(gen_);}
     using ThisType = PCGenerator<GeneratedType, UNROLL_COUNT>;
 
     template<typename T, bool manual_override=false,

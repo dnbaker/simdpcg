@@ -75,6 +75,31 @@ void populateRandom_avx512_pcg32_two(uint32_t *answer, uint32_t size) {
   counter += answer[size - 1];
 }
 
+void populateRandom_avx512_pcg32_template_four(uint32_t *answer, uint32_t size) {
+  uint32_t i = 0;
+  pcg::PCGenerator<uint64_t, 4> gen(1111);
+  if (size >= 32) {
+    while(i < size - 32) {
+      gen.generate_values();
+      std::memcpy(answer + i, gen.buf(), gen.bufsize());
+      i += 32;
+    }
+  }
+  gen.generate_values();
+  std::memcpy(answer + i, gen.buf(), size - i);
+}
+void populateRandom_avx512_pcg32_template_four_nocpy(uint32_t *answer, uint32_t size) {
+  uint32_t i = 0;
+  pcg::PCGenerator<uint64_t, 4> gen(14641);
+  if (size >= 32) {
+    while(i < size - 32) {
+      gen.buffill(answer + i);
+      i += sizeof(__m512i) / sizeof(uint32_t);
+    }
+  }
+  gen.generate_values();
+  std::memcpy(answer, gen.buf(), (size - i) * sizeof(uint32_t));
+}
 void populateRandom_avx512_pcg32_four(uint32_t *answer, uint32_t size) {
   uint32_t i = 0;
   avx512_pcg32_random_t key1 = {
@@ -196,6 +221,7 @@ void demo(int size) {
   BEST_TIME(populateRandom_avx512_pcg32(prec, size), , repeat, size);
   BEST_TIME(populateRandom_avx512_pcg32_two(prec, size), , repeat, size);
   BEST_TIME(populateRandom_avx512_pcg32_four(prec, size), , repeat, size);
+  BEST_TIME(populateRandom_avx512_pcg32_template_four(prec, size), , repeat, size);
 #else
   printf("AVX512 not enabled!\n");
 #endif
