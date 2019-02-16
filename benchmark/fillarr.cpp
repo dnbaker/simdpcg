@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cinttypes>
 #include <vector>
 
 #include "pcg32.h"
@@ -234,7 +235,10 @@ void demo(int size) {
 
 int main() {
   //demo(50000);
-  std::vector<int> v{1,2,3,4};
-  pcg::PCGenerator<uint64_t, 4> pcgen(v);
+  pcg::PCGenerator<uint64_t, 4> pcgen(1337);
+    uint64_t sum = 0;
+  for(size_t i = 0; i < 1337; ++i)
+    sum += pcgen();
+  fprintf(stderr, "Sum: %" PRIu64 "\n", sum);
   return 0;
 }

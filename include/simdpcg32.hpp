@@ -106,11 +106,16 @@ struct pcg_unroller_t<0> {
     static void apply_unaligned(Args &&... args) {}
 };
 
-const std::vector<uint64_t> make_seeds(uint64_t seed, size_t n) {
+namespace {
+__m512i make_seeds(uint64_t seed) {
     std::mt19937_64 mt(seed);
-    std::vector<uint64_t> ret;
-    while(ret.size() < n) ret.push_back(mt());
+    __m512i ret;
+    for(size_t i = 0; i < sizeof(ret) / sizeof(uint64_t); ++i) {
+        uint64_t v = mt();
+        std::memcpy((uint64_t *)&ret + i, &v, sizeof(v));
+    }
     return ret;
+}
 }
 
 } // namespace detail
@@ -146,20 +151,13 @@ public:
             std::memcpy((uint8_t *)dest, (uint8_t *)&lv, nbytes);
         }
     }
-    template<typename it1, typename it2> // Two types because sometimes end iterators are a different type.
-    PCGenerator(it1 i1, it2 i2): state_{_mm512_set1_epi64(*i1++), INC, MULTIPLIER}, offset_(0) {
-        if(auto dist = std::distance(i1, i2); __builtin_expect(dist != UNROLL_COUNT, 0))
-            throw dist < 0 ? std::runtime_error("Cannot create a PCGenerator instance with iterators in backwards order.")
-                           : std::runtime_error("Cannot create a PCGenerator with the wrong distance. Expected: "s + std::to_string(UNROLL_COUNT) + ". Found: " + std::to_string(dist));
-        for(size_t i = 0; i < UNROLL_COUNT; ++i) {
-            gen_[i] = avx512_pcg32_random_r(&state_);
-        }
+    void seed(uint64_t seed) {
+        state_.state = detail::make_seeds(seed);
     }
-    template<typename T, typename=std::enable_if_t<!types::is_integral_v<T> && !types::is_simd_v<T>>>
-    PCGenerator(const T &container): PCGenerator(std::begin(container), std::end(container)) {
-        static_assert(types::is_integral_v<std::decay_t<decltype(*std::begin(container))>>, "Must be integral.");
+    PCGenerator(__m512i seed): state_{seed, INC, MULTIPLIER} {
+        generate_values();
     }
-    PCGenerator(uint64_t seed): PCGenerator(detail::make_seeds(seed, UNROLL_COUNT)) {}
+    PCGenerator(uint64_t seed): PCGenerator(detail::make_seeds(seed)) {}
     GeneratedType operator()() {
         GeneratedType ret;
         if(__builtin_expect(offset_ > LAST_OFFSET, 0)) generate_values();
