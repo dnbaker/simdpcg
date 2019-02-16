@@ -16,7 +16,7 @@ all: fillarray
 %: ./benchmark/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -o $@ $<  -Iinclude
 
-%: ./benchmark/%.cpp $(HEADERS)
+%cpp: ./benchmark/%.cpp $(HEADERS)
 	$(CC) $(CFLAGS) -std=c++17 -S -fverbose-asm -o $@ $< -Iinclude
 
 clean:
